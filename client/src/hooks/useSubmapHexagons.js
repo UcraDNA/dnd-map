@@ -1,28 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API = '/api/hexagons';
-
-export function useHexagons() {
+export function useSubmapHexagons(hexId) {
   const [hexagons, setHexagons] = useState({});
-  const [config, setConfig] = useState({ cols: 10, rows: 8, hexSize: 60, dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15 });
+  const [config, setConfig] = useState({ cols: 8, rows: 8, hexSize: 60, dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15 });
   const [loading, setLoading] = useState(true);
+
+  const BASE = '/api/submaps/' + hexId;
 
   const fetchAll = useCallback(async () => {
     const [hexRes, cfgRes] = await Promise.all([
-      fetch(API).then(r => r.json()),
-      fetch(API + '/config').then(r => r.json()),
+      fetch(BASE + '/hexagons').then(r => r.json()),
+      fetch(BASE + '/config').then(r => r.json()),
     ]);
-    const map = {};
-    hexRes.forEach(h => { map[h.id] = h; });
-    setHexagons(map);
+    setHexagons(hexRes || {});
     setConfig(prev => ({ dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15, ...cfgRes }));
     setLoading(false);
-  }, []);
+  }, [hexId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const updateHex = useCallback(async (id, data) => {
-    const res = await fetch(API + '/' + id, {
+    const res = await fetch(BASE + '/hexagons/' + id, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -30,11 +28,11 @@ export function useHexagons() {
     const updated = await res.json();
     setHexagons(prev => ({ ...prev, [id]: updated }));
     return updated;
-  }, []);
+  }, [hexId]);
 
   const updateMany = useCallback(async (ids, data) => {
     const results = await Promise.all(ids.map(id =>
-      fetch(API + '/' + id, {
+      fetch(BASE + '/hexagons/' + id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -46,21 +44,20 @@ export function useHexagons() {
       return next;
     });
     return results;
-  }, []);
+  }, [hexId]);
 
-  // Borra el JSON del hexagono (vuelve a defaults) y su nota MD
   const deleteHex = useCallback(async (id) => {
-    await fetch(API + '/' + id, { method: 'DELETE' });
-    await fetch('/api/notes/' + id, { method: 'DELETE' });
+    await fetch(BASE + '/hexagons/' + id, { method: 'DELETE' });
+    await fetch(BASE + '/notes/' + id, { method: 'DELETE' });
     setHexagons(prev => {
       const next = { ...prev };
       delete next[id];
       return next;
     });
-  }, []);
+  }, [hexId]);
 
   const updateConfig = useCallback(async (newConfig) => {
-    const res = await fetch(API + '/config', {
+    const res = await fetch(BASE + '/config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newConfig),
@@ -68,7 +65,7 @@ export function useHexagons() {
     const updated = await res.json();
     setConfig(prev => ({ dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15, ...updated }));
     return updated;
-  }, []);
+  }, [hexId]);
 
   const getHex = useCallback((id, col, row, cols, rows) => {
     if (hexagons[id]) return hexagons[id];
@@ -86,5 +83,5 @@ export function useHexagons() {
     };
   }, [hexagons, config.dangerCenter, config.dangerEdge]);
 
-  return { hexagons, config, loading, updateHex, updateMany, deleteHex, updateConfig, getHex, refetch: fetchAll };
+  return { hexagons, config, loading, updateHex, updateMany, deleteHex, updateConfig, getHex };
 }

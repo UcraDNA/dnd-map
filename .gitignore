@@ -7,3 +7,6 @@ server/data/maps/*.jpg
 server/data/maps/*.jpeg
 server/data/maps/*.webp
 .env
+/server/data
+/server/data/hexagons
+/server/data

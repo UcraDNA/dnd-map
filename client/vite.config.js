@@ -7,6 +7,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:3001',
       '/maps': 'http://localhost:3001',
+      '/submaps': 'http://localhost:3001',
     },
   },
 });
