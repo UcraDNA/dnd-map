@@ -5,6 +5,7 @@
   --accent: #e94560;
   --text: #eee;
   --muted: #888;
+  --map-bg: #0d0d1a;
   --danger-1: #2ecc71;
   --danger-2: #f1c40f;
   --danger-3: #e67e22;
@@ -13,6 +14,11 @@
 }
 
 body { background: var(--bg); color: var(--text); }
+
+/* Ocultar flechas de inputs number en todos los browsers */
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
 .app {
   display: flex;
@@ -59,11 +65,17 @@ body { background: var(--bg); color: var(--text); }
 .map-container {
   flex: 1;
   position: relative;
+  background: var(--map-bg);
 }
 
 #map {
   width: 100%;
   height: 100%;
+  background: var(--map-bg) !important;
+}
+
+.leaflet-container {
+  background: var(--map-bg) !important;
 }
 
 /* Form elements */

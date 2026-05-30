@@ -5,20 +5,21 @@ import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BASE_DIR = path.join(__dirname, '../data/submaps');
 const router = express.Router();
 
-function submapDir(hexId) {
-  return path.join(__dirname, '../data/submaps', hexId);
+function mapDir(hexId, mapId) {
+  return path.join(BASE_DIR, hexId, mapId);
 }
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
 
-// Multer storage — guarda en data/submaps/:hexId/map.{ext}
+// Multer — guarda en data/submaps/:hexId/:mapId/map.{ext}
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const dir = submapDir(req.params.hexId);
+    const dir = mapDir(req.params.hexId, req.params.mapId);
     await ensureDir(dir);
     cb(null, dir);
   },
@@ -29,17 +30,21 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } });
 
-// GET /api/submaps — lista los hexIds que tienen sub-mapa
+// ─── Índice de hexIds con submapas ───────────────────────────────────────────
+
+// GET /api/submaps — lista hexIds que tienen al menos un mapa
 router.get('/', async (req, res) => {
   try {
-    const base = path.join(__dirname, '../data/submaps');
-    let dirs = [];
-    try { dirs = await fs.readdir(base); } catch {}
+    let hexDirs = [];
+    try { hexDirs = await fs.readdir(BASE_DIR); } catch {}
     const ids = [];
-    for (const d of dirs) {
+    for (const hexId of hexDirs) {
+      const hexPath = path.join(BASE_DIR, hexId);
       try {
-        await fs.access(path.join(base, d, 'meta.json'));
-        ids.push(d);
+        const stat = await fs.stat(hexPath);
+        if (!stat.isDirectory()) continue;
+        const maps = await fs.readdir(hexPath);
+        if (maps.length > 0) ids.push(hexId);
       } catch {}
     }
     res.json(ids);
@@ -48,15 +53,77 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/submaps/:hexId/upload
-router.post('/:hexId/upload', upload.single('map'), async (req, res) => {
+// ─── Listado de mapas de un hex ───────────────────────────────────────────────
+
+// GET /api/submaps/:hexId — lista los mapas de ese hex
+router.get('/:hexId', async (req, res) => {
   try {
-    const { hexId } = req.params;
-    const dir = submapDir(hexId);
+    const hexPath = path.join(BASE_DIR, req.params.hexId);
+    let mapDirs = [];
+    try { mapDirs = await fs.readdir(hexPath); } catch {}
+    const maps = [];
+    for (const mapId of mapDirs) {
+      const metaPath = path.join(hexPath, mapId, 'meta.json');
+      try {
+        const meta = JSON.parse(await fs.readFile(metaPath, 'utf8'));
+        maps.push({ mapId, ...meta });
+      } catch {
+        // dir existe pero sin meta (creado sin imagen aún)
+        const infoPath = path.join(hexPath, mapId, 'info.json');
+        try {
+          const info = JSON.parse(await fs.readFile(infoPath, 'utf8'));
+          maps.push({ mapId, ...info });
+        } catch {
+          maps.push({ mapId, name: mapId });
+        }
+      }
+    }
+    res.json(maps);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/submaps/:hexId — crear nuevo mapa (sin imagen todavía)
+router.post('/:hexId', async (req, res) => {
+  try {
+    const mapId = Date.now().toString();
+    const dir = mapDir(req.params.hexId, mapId);
+    await ensureDir(dir);
+    const info = { mapId, name: req.body.name || 'Mapa ' + mapId, createdAt: new Date().toISOString() };
+    await fs.writeFile(path.join(dir, 'info.json'), JSON.stringify(info, null, 2));
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/submaps/:hexId/:mapId — borrar un mapa completo
+router.delete('/:hexId/:mapId', async (req, res) => {
+  try {
+    const dir = mapDir(req.params.hexId, req.params.mapId);
+    await fs.rm(dir, { recursive: true, force: true });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Operaciones sobre un mapa específico ────────────────────────────────────
+
+// POST /api/submaps/:hexId/:mapId/upload
+router.post('/:hexId/:mapId/upload', upload.single('map'), async (req, res) => {
+  try {
+    const { hexId, mapId } = req.params;
+    const dir = mapDir(hexId, mapId);
+    // leer nombre guardado en info.json
+    let name = mapId;
+    try { name = JSON.parse(await fs.readFile(path.join(dir, 'info.json'), 'utf8')).name; } catch {}
     const meta = {
+      mapId, name,
       filename: req.file.filename,
       originalName: req.file.originalname,
-      url: '/submaps/' + hexId + '/' + req.file.filename,
+      url: '/submaps/' + hexId + '/' + mapId + '/' + req.file.filename,
       uploadedAt: new Date().toISOString(),
     };
     await fs.writeFile(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
@@ -66,32 +133,28 @@ router.post('/:hexId/upload', upload.single('map'), async (req, res) => {
   }
 });
 
-// GET /api/submaps/:hexId/current
-router.get('/:hexId/current', async (req, res) => {
+// GET /api/submaps/:hexId/:mapId/current
+router.get('/:hexId/:mapId/current', async (req, res) => {
   try {
-    const metaPath = path.join(submapDir(req.params.hexId), 'meta.json');
-    const data = await fs.readFile(metaPath, 'utf8');
+    const data = await fs.readFile(path.join(mapDir(req.params.hexId, req.params.mapId), 'meta.json'), 'utf8');
+    res.json(JSON.parse(data));
+  } catch { res.json(null); }
+});
+
+// GET /api/submaps/:hexId/:mapId/config
+router.get('/:hexId/:mapId/config', async (req, res) => {
+  try {
+    const data = await fs.readFile(path.join(mapDir(req.params.hexId, req.params.mapId), '_config.json'), 'utf8');
     res.json(JSON.parse(data));
   } catch {
-    res.json(null);
+    res.json({ cols: 8, rows: 8, hexSize: 0, dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15, gridShape: 'hex' });
   }
 });
 
-// GET /api/submaps/:hexId/config
-router.get('/:hexId/config', async (req, res) => {
+// PUT /api/submaps/:hexId/:mapId/config
+router.put('/:hexId/:mapId/config', async (req, res) => {
   try {
-    const cfgPath = path.join(submapDir(req.params.hexId), '_config.json');
-    const data = await fs.readFile(cfgPath, 'utf8');
-    res.json(JSON.parse(data));
-  } catch {
-    res.json({ cols: 8, rows: 8, hexSize: 60, dangerCenter: 3.0, dangerEdge: 5.0, boundsPadding: 0.15 });
-  }
-});
-
-// PUT /api/submaps/:hexId/config
-router.put('/:hexId/config', async (req, res) => {
-  try {
-    const dir = submapDir(req.params.hexId);
+    const dir = mapDir(req.params.hexId, req.params.mapId);
     await ensureDir(dir);
     const cfgPath = path.join(dir, '_config.json');
     let existing = {};
@@ -99,46 +162,29 @@ router.put('/:hexId/config', async (req, res) => {
     const merged = { ...existing, ...req.body };
     await fs.writeFile(cfgPath, JSON.stringify(merged, null, 2));
     res.json(merged);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/submaps/:hexId/hexagons
-router.get('/:hexId/hexagons', async (req, res) => {
+// GET /api/submaps/:hexId/:mapId/hexagons
+router.get('/:hexId/:mapId/hexagons', async (req, res) => {
   try {
-    const dir = submapDir(req.params.hexId);
+    const dir = mapDir(req.params.hexId, req.params.mapId);
     let files = [];
     try { files = await fs.readdir(dir); } catch {}
-    const hexFiles = files.filter(f => /^\d+-\d+\.json$/.test(f));
     const hexagons = {};
-    for (const f of hexFiles) {
+    for (const f of files.filter(f => /^\d+-\d+\.json$/.test(f))) {
       const data = JSON.parse(await fs.readFile(path.join(dir, f), 'utf8'));
       hexagons[data.id] = data;
     }
     res.json(hexagons);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/submaps/:hexId/hexagons/:subId
-router.get('/:hexId/hexagons/:subId', async (req, res) => {
+// PUT /api/submaps/:hexId/:mapId/hexagons/:subId
+router.put('/:hexId/:mapId/hexagons/:subId', async (req, res) => {
   try {
-    const filePath = path.join(submapDir(req.params.hexId), req.params.subId + '.json');
-    const data = await fs.readFile(filePath, 'utf8');
-    res.json(JSON.parse(data));
-  } catch {
-    res.status(404).json(null);
-  }
-});
-
-// PUT /api/submaps/:hexId/hexagons/:subId
-router.put('/:hexId/hexagons/:subId', async (req, res) => {
-  try {
-    const dir = submapDir(req.params.hexId);
+    const dir = mapDir(req.params.hexId, req.params.mapId);
     await ensureDir(dir);
-    const filePath = path.join(dir, req.params.subId + '.json');
     const data = {
       id: req.params.subId,
       danger: parseFloat(req.body.danger) || 3.0,
@@ -146,73 +192,55 @@ router.put('/:hexId/hexagons/:subId', async (req, res) => {
       label: req.body.label || '',
       updatedAt: new Date().toISOString(),
     };
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+    await fs.writeFile(path.join(dir, req.params.subId + '.json'), JSON.stringify(data, null, 2));
     res.json(data);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /api/submaps/:hexId/hexagons/:subId
-router.delete('/:hexId/hexagons/:subId', async (req, res) => {
+// DELETE /api/submaps/:hexId/:mapId/hexagons/:subId
+router.delete('/:hexId/:mapId/hexagons/:subId', async (req, res) => {
   try {
-    const filePath = path.join(submapDir(req.params.hexId), req.params.subId + '.json');
-    await fs.unlink(filePath);
-    // Also delete note
-    const notePath = path.join(submapDir(req.params.hexId), 'notes', req.params.subId + '.md');
-    try { await fs.unlink(notePath); } catch {}
+    const dir = mapDir(req.params.hexId, req.params.mapId);
+    await fs.unlink(path.join(dir, req.params.subId + '.json')).catch(() => {});
+    await fs.unlink(path.join(dir, 'notes', req.params.subId + '.md')).catch(() => {});
     res.json({ ok: true });
-  } catch {
-    res.json({ ok: true });
-  }
+  } catch { res.json({ ok: true }); }
 });
 
-// GET /api/submaps/:hexId/notes
-router.get('/:hexId/notes', async (req, res) => {
+// GET /api/submaps/:hexId/:mapId/notes
+router.get('/:hexId/:mapId/notes', async (req, res) => {
   try {
-    const notesDir = path.join(submapDir(req.params.hexId), 'notes');
+    const notesDir = path.join(mapDir(req.params.hexId, req.params.mapId), 'notes');
     let files = [];
     try { files = await fs.readdir(notesDir); } catch {}
-    const ids = files.filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
-    res.json(ids);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+    res.json(files.filter(f => f.endsWith('.md')).map(f => f.replace('.md', '')));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/submaps/:hexId/notes/:subId
-router.get('/:hexId/notes/:subId', async (req, res) => {
+// GET /api/submaps/:hexId/:mapId/notes/:subId
+router.get('/:hexId/:mapId/notes/:subId', async (req, res) => {
   try {
-    const notePath = path.join(submapDir(req.params.hexId), 'notes', req.params.subId + '.md');
-    const data = await fs.readFile(notePath, 'utf8');
+    const data = await fs.readFile(path.join(mapDir(req.params.hexId, req.params.mapId), 'notes', req.params.subId + '.md'), 'utf8');
     res.send(data);
-  } catch {
-    res.send('');
-  }
+  } catch { res.send(''); }
 });
 
-// PUT /api/submaps/:hexId/notes/:subId
-router.put('/:hexId/notes/:subId', async (req, res) => {
+// PUT /api/submaps/:hexId/:mapId/notes/:subId
+router.put('/:hexId/:mapId/notes/:subId', async (req, res) => {
   try {
-    const notesDir = path.join(submapDir(req.params.hexId), 'notes');
+    const notesDir = path.join(mapDir(req.params.hexId, req.params.mapId), 'notes');
     await ensureDir(notesDir);
-    const notePath = path.join(notesDir, req.params.subId + '.md');
-    await fs.writeFile(notePath, req.body.content || '');
+    await fs.writeFile(path.join(notesDir, req.params.subId + '.md'), req.body.content || '');
     res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// DELETE /api/submaps/:hexId/notes/:subId
-router.delete('/:hexId/notes/:subId', async (req, res) => {
+// DELETE /api/submaps/:hexId/:mapId/notes/:subId
+router.delete('/:hexId/:mapId/notes/:subId', async (req, res) => {
   try {
-    const notePath = path.join(submapDir(req.params.hexId), 'notes', req.params.subId + '.md');
-    await fs.unlink(notePath);
+    await fs.unlink(path.join(mapDir(req.params.hexId, req.params.mapId), 'notes', req.params.subId + '.md'));
     res.json({ ok: true });
-  } catch {
-    res.json({ ok: true });
-  }
+  } catch { res.json({ ok: true }); }
 });
 
 export default router;

@@ -15,8 +15,8 @@ export default function GridConfig({ config, onUpdate }) {
   const [dangerCenter, setDangerCenter] = useState(config.dangerCenter ?? 3.0);
   const [dangerEdge, setDangerEdge] = useState(config.dangerEdge ?? 5.0);
   const [boundsPadding, setBoundsPadding] = useState(config.boundsPadding ?? 0.15);
+  const [gridShape, setGridShape] = useState(config.gridShape ?? 'hex');
 
-  // Sincronizar cuando config carga desde la API
   useEffect(() => {
     setCols(config.cols);
     setRows(config.rows);
@@ -24,16 +24,18 @@ export default function GridConfig({ config, onUpdate }) {
     setDangerCenter(config.dangerCenter ?? 3.0);
     setDangerEdge(config.dangerEdge ?? 5.0);
     setBoundsPadding(config.boundsPadding ?? 0.15);
+    setGridShape(config.gridShape ?? 'hex');
   }, [config]);
 
   const handleApply = () => {
     onUpdate({
       cols: parseInt(cols) || 10,
       rows: parseInt(rows) || 8,
-      hexSize: parseInt(hexSize) || 60,
+      hexSize: parseInt(hexSize) || 0,
       dangerCenter: parseFloat(dangerCenter),
       dangerEdge: parseFloat(dangerEdge),
       boundsPadding: parseFloat(boundsPadding),
+      gridShape,
     });
   };
 
@@ -57,6 +59,21 @@ export default function GridConfig({ config, onUpdate }) {
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, marginTop: -4 }}>
         0 = automatico (se ajusta a la imagen)
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>Forma de celda</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[{ key: 'hex', label: '⬡ Hexagono' }, { key: 'square', label: '⬜ Cuadrado' }].map(opt => (
+            <button key={opt.key} onClick={() => setGridShape(opt.key)} style={{
+              flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: 600,
+              border: gridShape === opt.key ? '1px solid var(--accent)' : '1px solid var(--border)',
+              borderRadius: 4, cursor: 'pointer',
+              background: gridShape === opt.key ? 'rgba(233,69,96,0.15)' : 'var(--bg)',
+              color: gridShape === opt.key ? 'var(--accent)' : 'var(--muted)',
+            }}>{opt.label}</button>
+          ))}
+        </div>
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', margin: '14px 0 8px' }}>
@@ -87,7 +104,6 @@ export default function GridConfig({ config, onUpdate }) {
           style={{ width: '100%', accentColor: dangerColor(dangerEdge) }} />
       </div>
 
-      {/* Preview gradiente */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Preview gradiente</div>
         <div style={{ display: 'flex', height: 14, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
@@ -104,7 +120,6 @@ export default function GridConfig({ config, onUpdate }) {
         </div>
       </div>
 
-      {/* Limites del mapa */}
       <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', margin: '14px 0 8px' }}>
         Limites del mapa
       </div>
@@ -124,7 +139,6 @@ export default function GridConfig({ config, onUpdate }) {
           <span style={{ fontSize: 9, color: 'var(--muted)' }}>Maximo (100%)</span>
         </div>
 
-        {/* Preview visual del limite */}
         <div style={{ marginTop: 8, position: 'relative', height: 48, background: '#0d0d1a', borderRadius: 4, overflow: 'hidden' }}>
           <div style={{
             position: 'absolute',

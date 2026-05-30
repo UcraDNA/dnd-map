@@ -29,7 +29,7 @@ const upload = multer({
   },
 });
 
-// GET /api/maps/current - metadata of current map
+// GET /api/maps/current
 router.get('/current', async (req, res) => {
   try {
     const raw = await fs.readFile(META_FILE, 'utf8');
@@ -39,7 +39,7 @@ router.get('/current', async (req, res) => {
   }
 });
 
-// POST /api/maps/upload - upload a new map image
+// POST /api/maps/upload
 router.post('/upload', upload.single('map'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image provided' });
 
@@ -52,6 +52,22 @@ router.post('/upload', upload.single('map'), async (req, res) => {
   await fs.mkdir(MAPS_DIR, { recursive: true });
   await fs.writeFile(META_FILE, JSON.stringify(meta, null, 2));
   res.json(meta);
+});
+
+// DELETE /api/maps/current
+router.delete('/current', async (req, res) => {
+  try {
+    const raw = await fs.readFile(META_FILE, 'utf8');
+    const meta = JSON.parse(raw);
+    if (meta.filename) {
+      const imgPath = path.join(MAPS_DIR, meta.filename);
+      await fs.unlink(imgPath).catch(() => {});
+    }
+    await fs.unlink(META_FILE).catch(() => {});
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true });
+  }
 });
 
 export default router;

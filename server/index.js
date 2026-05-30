@@ -6,6 +6,7 @@ import hexagonRoutes from './routes/hexagons.js';
 import mapRoutes from './routes/maps.js';
 import notesRoutes from './routes/notes.js';
 import submapRoutes from './routes/submaps.js';
+import partyRoutes from './routes/party.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +25,7 @@ app.use('/api/hexagons', hexagonRoutes);
 app.use('/api/maps', mapRoutes);
 app.use('/api/notes', notesRoutes);
 app.use('/api/submaps', submapRoutes);
+app.use('/api/party', partyRoutes);
 
 // Serve React build in production
 app.use(express.static(path.join(__dirname, '../client/dist')));

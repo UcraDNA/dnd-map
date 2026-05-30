@@ -7,6 +7,7 @@ server/data/maps/*.jpg
 server/data/maps/*.jpeg
 server/data/maps/*.webp
 .env
+vite.config.js.timestamp-*.mjs
 /server/data
 /server/data/hexagons
 /server/data
